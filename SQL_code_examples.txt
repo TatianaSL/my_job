@@ -1,0 +1,75 @@
+/*Аггрегатные функции, группировка, подзапросы.
+При анализе остатков книг на складе было решено дополнительно заказать книги авторов, у которых суммарное число экземпляров 
+книг меньше 10. В таблице должны быть отображены авторы, наименьшее и наибольшее количество их книг*/
+
+select author as Автор, mini as Наименьшее_кол_во, maxi as Наибольшее_кол_во
+from (
+select author, min(amount) as mini, max(amount) as maxi
+    from book
+    group by 1
+) tmp
+group by 1
+having author in (select author
+                from book
+                group by 1
+                having sum(amount) < 10)
+
+
+/*Оконные функции ранжирования.
+  Необходимо получить лучших покупателей всей сети без разбивки по магазинам, но с разбивкой по месяцам. За 
+  основу деления на группы берите 4 сегмента: 1 — самая большая сумма покупок за месяц, 4 — минимальная сумма 
+  покупок. Напишите SQL запрос, который выведет 4 колонки: month — номер месяца, first_name — имя покупателя, 
+  last_name — фамилия покупателя, amount — общая сумма выполненных заказов (status="success") покупателя в текущем месяце. 
+  c_level выводить не нужно, так как нам интересны только покупатели из первой группы.
+  Итоговые данные отсортируйте по месяцу, а после по сумме заказа в возрастающем порядке*/
+
+SELECT month, first_name, last_name, amount FROM
+    (SELECT 
+     MONTH(date) as month, first_name, last_name, 
+     SUM(amount) as amount,  
+     NTILE(4) OVER(PARTITION BY month(date) ORDER BY SUM(amount) DESC) as c_level FROM orders 
+        LEFT OUTER JOIN users ON orders.user_id = users.id
+        WHERE status = 'success'
+        GROUP BY month, user_id
+        ORDER BY month, amount) as temp
+WHERE c_level = 1
+ORDER BY month, amount
+
+
+/*В таблице ниже содержится список квартир агентства недвижимости. Каждый раз, когда клиент просит подобрать варианты, 
+ему предлагаются три самые подходящие позиции. Если по заданным критериям получается больше трёх вариантов, например 
+несколько квартир с одинаковой ценой, то эти дополнительные позиции также попадают в итоговую выборку. И получается, 
+что вместо трёх позиций клиенту отправляется больше. Напишите SQL-запрос, который вернет список подходящих квартир. 
+Клиента интересуют все варианты более 1 комнаты, чем дешевле, тем лучше.*/
+
+select distinct street, house, price, rooms    
+from (select *, rank() over(order by price) as low_price
+    from flats
+    where rooms > 1
+order by rooms desc, price) tmp
+where low_price in (1, 2, 3)
+order by rooms desc, price
+
+
+/*Группировка и оконные функции.
+  В таблице orders хранится список заказов компании. Напишите запрос, который в первом столбце (year) — выведет год, во втором (status) — статус заказа, в третьем (orders) — общее количество заказов данного статуса за соответствующий год, а в четвертом (percent) — процент в рамках соответствующего года.
+  Данные отсортируйте по году и по статусу в алфавитном порядке*/
+
+select distinct year(date) as year, status, count(status) as orders, 
+count(status)*100/sum(count(status)) over (partition by year(date)
+                                               order by YEAR(date)) percent
+from orders
+group by year, status
+order by year, status
+
+
+/*Сортировка в оконных функциях.
+Напишите SQL-запрос, который выведет по два самых популярных фильма каждого жанра. Итоговая таблица должна содержать 
+3 столбца: название, рейтинг и жанр. Финальные данные нужно отсортировать по рейтингу в обратном порядке*/
+
+select name, rating, genre
+from (select name, rating, genre, row_number() over(partition by genre order by rating desc) as genre_rating
+from films
+order by genre, genre_rating) query
+where genre_rating <=2
+order by rating desc
